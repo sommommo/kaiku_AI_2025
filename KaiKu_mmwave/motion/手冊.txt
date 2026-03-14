@@ -1,0 +1,565 @@
+1. 系統用途
+
+這套系統可用來做：
+
+即時 mmWave 資料擷取
+
+人體 target bin 自動選擇
+
+motion energy 計算
+
+phase / 呼吸 / 心跳訊號觀察
+
+跌倒 / 咳嗽事件 baseline 偵測
+
+事件 segment 自動存檔
+
+離線切窗建立資料集
+
+訓練分類模型
+
+用模型預測 segment 類別
+
+2. 專案檔案結構
+
+請把主要檔案整理成同一個資料夾：
+
+config.py
+utils.py
+processing.py
+system_core.py
+gui.py
+kkt_runner.py
+dataset_tools.py
+offline_review.py
+train_model.py
+predict_model.py
+main.py
+
+建議你用我給你的 final 版本覆蓋這三個：
+
+config_final.py        -> config.py
+dataset_tools_final.py -> dataset_tools.py
+system_core_final.py   -> system_core.py
+3. 各檔案功能
+config.py
+
+系統總參數設定，包括：
+
+雷達設定路徑 setting_dir
+
+輸出資料夾 out_root
+
+集中式資料集根目錄 dataset_root
+
+FFT / bin / 偵測門檻參數
+
+utils.py
+
+共用工具：
+
+RingArray
+
+SignalTools
+
+to_int_safe
+
+processing.py
+
+特徵處理模組：
+
+raw frame → range FFT
+
+range score
+
+自動選 target bin
+
+phase 抽取
+
+呼吸 / 心跳特徵
+
+motion / cough burst 特徵
+
+system_core.py
+
+系統核心：
+
+緩衝 raw frame
+
+呼叫 processing.py
+
+跌倒 / 咳嗽事件 baseline 判斷
+
+儲存 session
+
+儲存 dataset segment
+
+寫入集中式 index.csv
+
+gui.py
+
+即時視窗顯示：
+
+Range Profile
+
+Phase
+
+Respiration
+
+Heart
+
+Motion Energy
+
+kkt_runner.py
+
+KKT 與 FRM 連接模組：
+
+初始化裝置
+
+載入 setting
+
+啟動 receiver
+
+持續收資料
+
+dataset_tools.py
+
+資料集工具：
+
+DatasetRecorder：存 segment
+
+OfflineReview：從整段 session 離線切窗
+
+FeatureBuilder：把 segment 轉成特徵向量
+
+Trainer：訓練 RandomForest
+
+offline_review.py
+
+離線切窗執行版。
+
+train_model.py
+
+訓練模型執行版。
+
+predict_model.py
+
+對單一 segment 做模型預測。
+
+main.py
+
+整個系統的主入口。
+
+4. 執行前準備
+4.1 修改 setting 路徑
+
+先打開 config.py，修改：
+
+setting_dir = r"...你的 TempParam 路徑..."
+
+例如你目前可能會用：
+
+K60168-Test-00256-008-v0.0.8-20230717_120cm
+
+如果你主要要做跌倒 / 大動作，先試 120cm。
+如果主要看 phase 微動 / 呼吸 / 咳嗽，再試 60cm。
+
+4.2 安裝必要套件
+
+至少要有：
+
+pip install numpy
+
+如果要 GUI：
+
+pip install pyqtgraph PyQt5
+
+如果要訓練模型：
+
+pip install scikit-learn joblib
+4.3 確認 KKT 環境
+
+你必須能正常 import：
+
+from KKT_Module import kgl
+
+如果這裡失敗，代表 KKT SDK 或環境還沒設好。
+
+5. 輸出資料夾說明
+
+執行後會產生：
+
+OutputResearchSystem/
+    session_YYYYmmdd_HHMMSS/
+        raw_frames.npz
+        session_meta.json
+
+    dataset_master/
+        index.csv
+        segments/
+            fall/
+            cough/
+            sit/
+            normal/
+            bend/
+            walk/
+6. 第一步：即時收資料
+
+執行：
+
+python main.py
+
+系統會：
+
+啟動雷達
+
+即時擷取 raw frame
+
+顯示 GUI
+
+自動做 baseline 事件判斷
+
+存整段 session
+
+若觸發 event，會自動存 segment 到 dataset
+
+執行時會看到什麼
+
+如果 GUI 正常，你會看到：
+
+Range Profile Score
+
+Phase
+
+Respiration Signal
+
+Heart Signal
+
+Motion Energy
+
+畫面上也會顯示：
+
+FPS
+
+Target bin
+
+Motion / motion z-score
+
+Resp / Heart
+
+Bursts
+
+Last event
+
+停止系統
+
+按：
+
+Ctrl + C
+
+停止後會自動存：
+
+raw_frames.npz
+
+session_meta.json
+
+7. 第二步：離線切窗建立資料集
+
+如果你錄了一大段 session，想手動指定某一段是 fall 或 normal，可以用：
+
+python offline_review.py --session_npz OutputResearchSystem/session_xxx/raw_frames.npz --label fall --window_sec 2.0 --stride_sec 0.25
+常用參數
+指定 session 檔
+--session_npz
+指定標籤
+--label fall
+
+可用 label 建議：
+
+fall
+
+cough
+
+sit
+
+normal
+
+bend
+
+walk
+
+視窗長度
+--window_sec 2.0
+滑動步長
+--stride_sec 0.25
+指定切某段時間
+--start_sec 5
+--end_sec 12
+
+例如：
+
+python offline_review.py --session_npz OutputResearchSystem/session_20260310_100000/raw_frames.npz --label fall --window_sec 2.0 --stride_sec 0.25 --start_sec 8 --end_sec 15
+
+意思是只把第 8~15 秒切成 fall 視窗。
+
+8. 第三步：訓練模型
+
+執行：
+
+python train_model.py
+
+系統會讀：
+
+OutputResearchSystem/dataset_master/index.csv
+
+然後：
+
+載入所有 segment
+
+抽 feature
+
+訓練 RandomForest
+
+存模型
+
+輸出報告
+
+輸出位置：
+
+trained_models/
+    mmwave_action_rf.joblib
+    mmwave_action_rf_report.txt
+訓練前條件
+
+至少要有一些 segment 已經存在，例如：
+
+fall
+
+sit
+
+normal
+
+cough
+
+如果資料太少，會報：
+
+Not enough samples to train
+9. 第四步：預測單一 segment
+
+執行：
+
+python predict_model.py --segment OutputResearchSystem/dataset_master/segments/fall/fall_xxx.npz
+
+如果模型檔不在預設位置：
+
+python predict_model.py --segment your_segment.npz --model trained_models/mmwave_action_rf.joblib
+
+輸出會包含：
+
+預測 label
+
+真實 label
+
+probability
+
+meta 資訊
+
+10. 資料集建立建議
+最少先錄這些類別
+
+建議至少：
+
+fall
+
+sit
+
+normal
+
+bend
+
+walk
+
+cough
+
+每類資料量建議
+
+原型版：
+
+每類先錄 20~50 段
+
+比較像模型訓練版：
+
+每類 100 段以上
+
+每段長度建議
+
+跌倒：2~4 秒
+
+咳嗽：1~2 秒
+
+正常 / walk：2~5 秒
+
+11. 建議實驗流程
+路線 A：先做 rule-based 驗證
+
+跑 main.py
+
+看 Range / Phase / Motion Energy
+
+測：
+
+靜止
+
+走動
+
+快速坐下
+
+跌倒
+
+咳嗽
+
+調 config.py 門檻
+
+路線 B：再做資料集
+
+錄 session
+
+用 offline_review.py 切窗
+
+產生 index.csv
+
+路線 C：再訓練模型
+
+python train_model.py
+
+python predict_model.py
+
+比較預測結果
+
+12. 重要參數說明
+
+在 config.py 裡最常調的是：
+
+motion_z_fall
+
+跌倒事件門檻。
+越大越不容易觸發。
+
+motion_z_cough
+
+咳嗽 burst 門檻。
+越小越敏感。
+
+cough_min_bursts
+
+短時間內要出現幾次 burst 才算 cough。
+
+fall_still_sec
+
+跌倒後要持續低活動多久。
+
+fft_bins
+
+range FFT 使用的 bin 數。
+
+ignore_bins
+
+忽略近距離直流或雜波 bin。
+
+13. 常見問題
+Q1：GUI 沒出來
+
+先確認安裝：
+
+pip install pyqtgraph PyQt5
+
+如果沒有 GUI 套件，系統會自動 headless 執行。
+
+Q2：一直抓不到 target bin
+
+先檢查：
+
+人體是否在有效距離內
+
+setting_dir 是否選對
+
+120cm / 60cm 是否適合目前場景
+
+ignore_bins 是否設太高
+
+Q3：跌倒和快速坐下分不清
+
+這很正常。
+先多收：
+
+sit
+
+bend
+
+normal
+
+再訓練模型，不要只靠規則式。
+
+Q4：咳嗽很難抓
+
+只靠 mmWave 本來就難。
+目前比較適合先做：
+
+cough-like burst event
+
+上半身異常急促動作
+
+不要一開始就要求精準嗆咳分類。
+
+Q5：為什麼 120cm 比較適合跌倒
+
+因為跌倒 / 大動作通常需要看更完整的人體位移，不只是近距離胸腔微動。
+所以大動作先試 120cm 比較合理。
+
+14. 推薦操作順序
+
+你現在最推薦這樣做：
+
+第 1 天
+
+改好 config.py
+
+跑 main.py
+
+看波形
+
+第 2 天
+
+錄 fall / sit / normal / cough
+
+第 3 天
+
+用 offline_review.py 切資料
+
+第 4 天
+
+用 train_model.py 訓練
+
+第 5 天
+
+用 predict_model.py 驗證
+
+15. 最後建議
+
+先不要急著追求：
+
+多人
+
+嗆咳精準分類
+
+即時模型部署
+
+先把這三件事做好：
+
+單人
+
+跌倒 vs 非跌倒
+
+資料集可訓練
+
+這樣成功率最高。
