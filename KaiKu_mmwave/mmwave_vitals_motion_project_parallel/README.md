@@ -138,15 +138,6 @@ pip install numpy pyqtgraph PySide2 scikit-learn joblib
 
 ---
 
-## 你接下來通常還會想補的
-
-1. 把異常動作事件自動存成 segment
-2. 做事件列表與事件時間軸
-3. 加入模型類別分數條圖
-4. 加入錄影 / 回放模式
-
-
-
 ## v3 說明
 - 未載入模型時，GUI 不再顯示 motion_detected，而是顯示「偵測到動作」。
 - Frame 若為負值，GUI 會顯示 --，避免誤判為正常 frame 編號。
