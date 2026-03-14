@@ -1,5 +1,6 @@
 import os
 import csv
+import json
 import time
 import numpy as np
 
@@ -10,7 +11,10 @@ LABEL_TO_ID = {
     "normal": 0,
     "fall": 1,
     "cough": 2,
-    "agitation": 3,
+    "sit": 3,
+    "bend": 4,
+    "walk": 5,
+    "other": 6,
 }
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
@@ -77,7 +81,7 @@ class DatasetRecorder:
                 csv.writer(f).writerow(["segment_path", "label", "label_id", "fps", "target_bin", "created_at"])
 
     def save_segment(self, label: str, phase_wave, motion_wave, range_profile, fps: float, target_bin: int):
-        label = label if label in LABEL_TO_ID else "normal"
+        label = label if label in LABEL_TO_ID else "other"
         out_dir = os.path.join(self.segment_root, label)
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, time.strftime(f"{label}_%Y%m%d_%H%M%S.npz"))

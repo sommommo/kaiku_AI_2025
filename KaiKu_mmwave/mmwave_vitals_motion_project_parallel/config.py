@@ -5,7 +5,7 @@ import os
 
 @dataclass
 class DeviceConfig:
-    setting_dir: str = r"C:\Users\USER\Desktop\KaiKu_mmwave\radar-gesture-recognition-chore-update-20250815\TempParam\K60168-Test-00256-008-v0.0.8-20230717_120cm"
+    setting_dir: str = r"C:\Users\113\Desktop\KaiKu_mmwave\radar-gesture-recognition-chore-update-20250815\TempParam\K60168-Test-00256-008-v0.0.8-20230717_120cm"
     stream_type: str = "raw_data"
     use_kkt_device: bool = True
 
@@ -46,26 +46,17 @@ class ModelConfig:
         0: "normal",
         1: "fall",
         2: "cough",
-        3: "agitation",
+        3: "sit",
+        4: "bend",
+        5: "walk",
+        6: "other",
     })
     infer_window_sec: float = 2.0
     infer_stride_sec: float = 0.25
     score_threshold: float = 0.50
     motion_gate_threshold: float = 3.0
-    idle_label: str = "normal"
-
-
-@dataclass
-class AlertConfig:
-    enabled: bool = True
-    resp_low_rpm: float = 8.0
-    resp_high_rpm: float = 24.0
-    heart_low_bpm: float = 50.0
-    heart_high_bpm: float = 120.0
-    sustain_sec: float = 8.0
-    cooldown_sec: float = 2.0
-    show_combined_first: bool = True
-
+    idle_label: str = "normal" ## "normal" 會顯示與名稱相同的圖片
+    
 
 @dataclass
 class GUIConfig:
@@ -74,8 +65,10 @@ class GUIConfig:
     max_points: int = 800
     action_asset_dir: str = os.path.join("assets", "actions")
     alert_asset_dir: str = os.path.join("assets", "alerts")
+    resp_normal_range: Tuple[float, float] = (8.0, 24.0)
+    heart_normal_range: Tuple[float, float] = (50.0, 120.0)
     main_width: int = 1480
-    main_height: int = 980
+    main_height: int = 900
 
 
 @dataclass
@@ -83,7 +76,6 @@ class AppConfig:
     device: DeviceConfig = field(default_factory=DeviceConfig)
     dsp: DSPConfig = field(default_factory=DSPConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-    alert: AlertConfig = field(default_factory=AlertConfig)
     gui: GUIConfig = field(default_factory=GUIConfig)
 
 

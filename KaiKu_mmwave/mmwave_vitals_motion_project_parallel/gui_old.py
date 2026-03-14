@@ -1,6 +1,5 @@
 import os
 import sys
-from pathlib import Path
 import numpy as np
 
 GUI_AVAILABLE = True
@@ -19,7 +18,7 @@ class MetricCard(QtWidgets.QFrame):
         super().__init__()
         self.setObjectName("MetricCard")
         lay = QtWidgets.QVBoxLayout(self)
-        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setContentsMargins(14, 10, 14, 10)
         self.title = QtWidgets.QLabel(title)
         self.title.setObjectName("MetricTitle")
         self.value = QtWidgets.QLabel(value)
@@ -29,57 +28,6 @@ class MetricCard(QtWidgets.QFrame):
 
     def set_value(self, text: str):
         self.value.setText(text)
-
-
-class StatusIconCard(QtWidgets.QFrame):
-    def __init__(self, title: str, image_name: str):
-        super().__init__()
-        self.setObjectName("StatusCard")
-        lay = QtWidgets.QVBoxLayout(self)
-        lay.setContentsMargins(10, 8, 10, 8)
-        lay.setSpacing(4)
-
-        self.title = QtWidgets.QLabel(title)
-        self.title.setAlignment(QtCore.Qt.AlignCenter)
-        self.title.setObjectName("StatusTitle")
-
-        self.image_wrap = QtWidgets.QFrame()
-        self.image_wrap.setObjectName("StatusImageWrap")
-        self.image_wrap.setMinimumHeight(78)
-        self.image_wrap.setMaximumHeight(92)
-        wrap_lay = QtWidgets.QVBoxLayout(self.image_wrap)
-        wrap_lay.setContentsMargins(6, 4, 6, 4)
-        wrap_lay.setSpacing(0)
-
-        self.image = QtWidgets.QLabel()
-        self.image.setAlignment(QtCore.Qt.AlignCenter)
-        self.image.setMinimumSize(72, 48)
-        self.image.setMaximumSize(88, 58)
-        self.image.setObjectName("StatusImage")
-        self.image.setScaledContents(False)
-        wrap_lay.addWidget(self.image, 0, QtCore.Qt.AlignCenter)
-
-        self.text = QtWidgets.QLabel("--")
-        self.text.setAlignment(QtCore.Qt.AlignCenter)
-        self.text.setObjectName("StatusText")
-
-        lay.addWidget(self.title)
-        lay.addWidget(self.image_wrap)
-        lay.addWidget(self.text)
-        self.image_name = image_name
-
-    def set_status(self, text: str, ok: bool):
-        bg = "#edf9f0" if ok else "#fff1f1"
-        border = "#48a868" if ok else "#d45b5b"
-        title = "#2f7d4a" if ok else "#b43f3f"
-        self.setStyleSheet(
-            "QFrame#StatusCard { background: %s; border: 2px solid %s; border-radius: 16px; }"
-            "QFrame#StatusImageWrap { background: rgba(255,255,255,0.78); border: none; border-radius: 10px; }"
-            "QLabel#StatusTitle { color: %s; font-size: 15px; font-weight: 700; }"
-            "QLabel#StatusText { color: %s; font-size: 17px; font-weight: 700; }"
-            "QLabel#StatusImage { background: transparent; border: none; }" % (bg, border, title, title)
-        )
-        self.text.setText(text)
 
 
 class LiveWindow(QtWidgets.QMainWindow):
@@ -96,10 +44,6 @@ class LiveWindow(QtWidgets.QMainWindow):
         super().__init__()
         pg.setConfigOptions(antialias=True, background="w", foreground="k")
 
-        self.base_dir = Path(__file__).resolve().parent
-        self.action_dir = self.base_dir / self.cfg.action_asset_dir
-        self.alert_dir = self.base_dir / self.cfg.alert_asset_dir
-
         self.setWindowTitle(cfg.title)
         self.resize(cfg.main_width, cfg.main_height)
         self._build_ui()
@@ -113,11 +57,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
         root = QtWidgets.QVBoxLayout(central)
         root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
+        root.setSpacing(14)
 
         top = QtWidgets.QHBoxLayout()
         top.setSpacing(14)
-        root.addLayout(top, 1)
+        root.addLayout(top, 0)
 
         self.metric_panel = QtWidgets.QFrame()
         self.metric_panel.setObjectName("Panel")
@@ -127,25 +71,27 @@ class LiveWindow(QtWidgets.QMainWindow):
         metric_layout.setVerticalSpacing(12)
 
         self.cards = {
+            "range": MetricCard("Range / BIN", "--"),
+            "score": MetricCard("SCORE", "--"),
             "motion": MetricCard("MOTION", "--"),
             "rpm": MetricCard("RPM", "--"),
             "bpm": MetricCard("BPM", "--"),
             "fps": MetricCard("FPS / Frame", "--"),
         }
-        order = ["motion", "rpm", "bpm", "fps"]
+        order = ["range", "score", "motion", "rpm", "bpm", "fps"]
         for i, key in enumerate(order):
-            self.cards[key].setMinimumHeight(116)
-            self.cards[key].setMaximumHeight(130)
             metric_layout.addWidget(self.cards[key], i // 2, i % 2)
-        metric_layout.setRowStretch(0, 1)
-        metric_layout.setRowStretch(1, 1)
-        top.addWidget(self.metric_panel, 2)
+
+        self.debug_label = QtWidgets.QLabel("Top bins: --")
+        self.debug_label.setObjectName("SubInfo")
+        metric_layout.addWidget(self.debug_label, 3, 0, 1, 2)
+        top.addWidget(self.metric_panel, 3)
 
         self.action_panel = QtWidgets.QFrame()
         self.action_panel.setObjectName("Panel")
         action_layout = QtWidgets.QVBoxLayout(self.action_panel)
         action_layout.setContentsMargins(18, 18, 18, 18)
-        action_layout.setSpacing(8)
+        action_layout.setSpacing(10)
 
         title = QtWidgets.QLabel("現在的動作")
         title.setObjectName("PanelTitle")
@@ -155,48 +101,39 @@ class LiveWindow(QtWidgets.QMainWindow):
 
         self.action_image = QtWidgets.QLabel("(動作圖)")
         self.action_image.setAlignment(QtCore.Qt.AlignCenter)
-        self.action_image.setMinimumSize(240, 120)
-        self.action_image.setMaximumHeight(150)
+        self.action_image.setMinimumSize(240, 240)
         self.action_image.setObjectName("ImageBox")
 
-        alert_title = QtWidgets.QLabel("呼吸 / 心率警示")
-        alert_title.setObjectName("SubSectionTitle")
-        alert_row = QtWidgets.QHBoxLayout()
-        alert_row.setSpacing(10)
-        alert_row.setContentsMargins(0, 0, 0, 0)
-        self.resp_card = StatusIconCard("呼吸", "resp_icon")
-        self.heart_card = StatusIconCard("心率", "heart_icon")
-        alert_row.addWidget(self.resp_card)
-        alert_row.addWidget(self.heart_card)
-
-        self.action_hint = QtWidgets.QLabel("MODEL SCORE: -- | EVENT: --")
+        self.action_hint = QtWidgets.QLabel("例如：normal / cough / fall")
         self.action_hint.setAlignment(QtCore.Qt.AlignCenter)
         self.action_hint.setObjectName("SubInfo")
 
         action_layout.addWidget(title)
         action_layout.addWidget(self.action_text)
-        action_layout.addWidget(self.action_image)
-        action_layout.addWidget(alert_title)
-        action_layout.addLayout(alert_row)
+        action_layout.addWidget(self.action_image, 1)
         action_layout.addWidget(self.action_hint)
-        top.addWidget(self.action_panel, 1)
+        top.addWidget(self.action_panel, 2)
 
         wave_panel = QtWidgets.QFrame()
         wave_panel.setObjectName("Panel")
         wave_layout = QtWidgets.QGridLayout(wave_panel)
-        wave_layout.setContentsMargins(12, 12, 12, 12)
-        wave_layout.setSpacing(12)
-        wave_layout.setRowStretch(0, 2)
-        wave_layout.setRowStretch(1, 2)
-        root.addWidget(wave_panel, 5)
+        wave_layout.setContentsMargins(14, 14, 14, 14)
+        wave_layout.setSpacing(10)
+        root.addWidget(wave_panel, 1)
 
+        self.range_plot, self.range_curve = self._make_plot("Range")
+        self.range_vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen((30, 144, 255), width=2))
+        self.range_plot.addItem(self.range_vline)
+        self.phase_plot, self.phase_curve = self._make_plot("Phase")
         self.resp_plot, self.resp_curve = self._make_plot("Respiration")
         self.heart_plot, self.heart_curve = self._make_plot("Heart")
         self.motion_plot, self.motion_curve = self._make_plot("Motion")
 
-        wave_layout.addWidget(self.resp_plot, 0, 0)
-        wave_layout.addWidget(self.heart_plot, 0, 1)
-        wave_layout.addWidget(self.motion_plot, 1, 0, 1, 2)
+        wave_layout.addWidget(self.range_plot, 0, 0)
+        wave_layout.addWidget(self.phase_plot, 0, 1)
+        wave_layout.addWidget(self.resp_plot, 1, 0)
+        wave_layout.addWidget(self.heart_plot, 1, 1)
+        wave_layout.addWidget(self.motion_plot, 2, 0, 1, 2)
 
         status = self.statusBar()
         self.status_label = QtWidgets.QLabel("MODEL: -- | EVENT: --")
@@ -207,16 +144,12 @@ class LiveWindow(QtWidgets.QMainWindow):
             QFrame#Panel { background: white; border: 2px solid #d9dfeb; border-radius: 18px; }
             QFrame#MetricCard { background: #f9fbff; border: 1px solid #dce5f2; border-radius: 14px; }
             QLabel#MetricTitle { color: #5b6577; font-size: 13px; }
-            QLabel#MetricValue { color: #151b26; font-size: 30px; font-weight: 700; }
+            QLabel#MetricValue { color: #151b26; font-size: 24px; font-weight: 700; }
             QLabel#PanelTitle { color: #263042; font-size: 18px; font-weight: 700; }
-            QLabel#SubSectionTitle { color: #556277; font-size: 15px; font-weight: 700; }
-            QLabel#ActionText { color: #0f6cbd; font-size: 30px; font-weight: 800; padding: 4px; }
+            QLabel#ActionText { color: #0f6cbd; font-size: 32px; font-weight: 800; padding: 4px; }
             QLabel#ImageBox { background: #f8fbff; border: 2px dashed #bfd7f5; border-radius: 16px; color: #5d6b82; font-size: 22px; }
-            QLabel#SubInfo { color: #6a778d; font-size: 12px; }
+            QLabel#SubInfo { color: #6a778d; font-size: 13px; }
         """)
-
-        self._set_alert_icon(self.resp_card, "resp_icon")
-        self._set_alert_icon(self.heart_card, "heart_icon")
 
     def _make_plot(self, title: str):
         pw = pg.PlotWidget(title=title)
@@ -232,57 +165,27 @@ class LiveWindow(QtWidgets.QMainWindow):
         arr = np.asarray(arr)
         return arr[-self.cfg.max_points:] if arr.size else arr
 
-    def _set_image_to_label(self, label_widget, path, max_w=None, max_h=None):
-        if not path.exists():
-            return False
-        pix = QtGui.QPixmap(str(path))
-        if pix.isNull():
-            return False
-
-        if max_w is None:
-            max_w = max(10, label_widget.contentsRect().width() or label_widget.width() - 10)
-        if max_h is None:
-            max_h = max(10, label_widget.contentsRect().height() or label_widget.height() - 10)
-
-        pix = pix.scaled(int(max_w), int(max_h), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        label_widget.setPixmap(pix)
-        return True
-
-    def _set_action_image(self, label):
+    def _set_action_image(self, label: str):
+        base = self.cfg.action_asset_dir
         for ext in (".png", ".jpg", ".jpeg", ".webp"):
-            p = self.action_dir / (label + ext)
-            if self._set_image_to_label(self.action_image, p):
-                return
+            p = os.path.join(base, f"{label}{ext}")
+            if os.path.exists(p):
+                pix = QtGui.QPixmap(p)
+                if not pix.isNull():
+                    self.action_image.setPixmap(pix.scaled(
+                        self.action_image.width() - 10,
+                        self.action_image.height() - 10,
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation,
+                    ))
+                    return
         self.action_image.setPixmap(QtGui.QPixmap())
         self.action_image.setText(label if label not in ("", "-") else "(動作圖)")
 
-    def _set_alert_icon(self, card, stem):
-        candidates = [
-            self.alert_dir / (stem + ".png"),
-            self.alert_dir / (stem + ".jpg"),
-            self.alert_dir / (stem + ".jpeg"),
-            self.alert_dir / (stem + ".webp"),
-        ]
-        for p in candidates:
-            if self._set_image_to_label(card.image, p, max_w=84, max_h=54):
-                return
-        card.image.setPixmap(QtGui.QPixmap())
-        card.image.setText(card.title.text())
-
-    def _eval_resp_ok(self, rpm):
-        if rpm is None:
-            return True
-        low, high = self.cfg.resp_normal_range
-        return low <= float(rpm) <= high
-
-    def _eval_heart_ok(self, bpm):
-        if bpm is None:
-            return True
-        low, high = self.cfg.heart_normal_range
-        return low <= float(bpm) <= high
-
     def refresh(self):
         s = self.shared.snapshot()
+        self.cards["range"].set_value("--" if s.target_bin < 0 else f"BIN {s.target_bin}")
+        self.cards["score"].set_value(f"{s.bin_score:.3f}")
         self.cards["motion"].set_value(f"{s.motion_level:.3f}")
         rpm_text = "--" if s.resp_rpm is None else f"{s.resp_rpm:.1f}"
         bpm_text = "--" if s.heart_bpm is None else f"{s.heart_bpm:.1f}"
@@ -293,6 +196,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.cards["bpm"].set_value(bpm_text)
         frame_text = "--" if s.frame_count < 0 else str(int(s.frame_count))
         self.cards["fps"].set_value(f"{s.fps:.2f} / {frame_text}")
+        self.debug_label.setText(f"Top bins: {s.top_bins}")
 
         action_label = s.action_text or s.model_label or "等待資料"
         self.action_text.setText(action_label)
@@ -301,26 +205,18 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.action_hint.setText(f"MODEL SCORE: {s.model_score:.2f}   |   EVENT: {hint_event}   |   {quality_map.get(s.vitals_quality, s.vitals_quality)}")
         self._set_action_image(action_label.split("/")[-1])
 
-        resp_ok = self._eval_resp_ok(s.resp_rpm)
-        heart_ok = self._eval_heart_ok(s.heart_bpm)
-        self.resp_card.set_status("正常" if resp_ok else "異常", resp_ok)
-        self.heart_card.set_status("正常" if heart_ok else "異常", heart_ok)
-        self._set_alert_icon(self.resp_card, "resp_icon")
-        self._set_alert_icon(self.heart_card, "heart_icon")
-
+        if s.range_profile.size:
+            self.range_curve.setData(s.range_profile)
+            if s.target_bin >= 0:
+                self.range_vline.setValue(s.target_bin)
+        self.phase_curve.setData(self._tail(s.phase_wave))
         self.resp_curve.setData(self._tail(s.resp_wave))
         self.heart_curve.setData(self._tail(s.heart_wave))
         self.motion_curve.setData(self._tail(s.motion_wave))
 
+        event_text = s.event_text if s.event_text not in (None, "") else "-"
         self.status_label.setText(
-            "MODEL: %s (%.2f)   |   MOTION FLAG: %s   |   呼吸: %s   |   心率: %s   |   EVENT: %s" % (
-                s.model_label,
-                s.model_score,
-                'Y' if s.motion_flag else 'N',
-                '正常' if resp_ok else '異常',
-                '正常' if heart_ok else '異常',
-                hint_event,
-            )
+            f"MODEL: {s.model_label} ({s.model_score:.2f})   |   MOTION FLAG: {'Y' if s.motion_flag else 'N'}   |   VITALS: {s.vitals_quality}   |   EVENT: {event_text}"
         )
         self.app.processEvents()
 

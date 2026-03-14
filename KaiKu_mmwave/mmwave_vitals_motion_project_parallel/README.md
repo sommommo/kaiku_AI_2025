@@ -1,86 +1,161 @@
-# mmWave 生命體徵 + 異常動作偵測 專案（4 類動作 + 生理警示）
+# mmWave 生命體徵 + 異常動作偵測 專案（GUI 版）
 
-這版已改成兩條邏輯同時跑：
-- **動作辨識**：normal / fall / cough / agitation
-- **生命體徵警示**：呼吸異常 / 心率異常 / 呼吸&心率異常
+這版是依照你最新需求重整的整合專案，重點不是只有「載入模型」，而是把 **MOTION 分數 + 模型輸出** 一起拿來做動作判斷。
 
-## 新增內容
+## 這版的判斷邏輯
 
-### 1. 動作分類固定為 4 類
-`config.py > ModelConfig.label_map`
-- 0: `normal`
-- 1: `fall`
-- 2: `cough`
-- 3: `agitation`
+1. 先做 range FFT 與 target bin 選擇
+2. 從 target bin 取 phase，估測呼吸 / 心跳
+3. 同時計算 motion level
+4. **如果 MOTION 低於門檻** → 直接判成 `normal`
+5. **如果 MOTION 高於門檻** → 啟用已訓練模型做動作分類
+6. 模型分數不足時，GUI 顯示 `疑似動作`
 
-如果 `motion_level < motion_gate_threshold`，系統直接顯示 `normal`。
-如果 `motion_level >= motion_gate_threshold`，才進模型推論。
+也就是說，這份不是單純 `model.predict()`，而是：
 
-### 2. 生理警示邏輯
-新增 `AlertConfig`：
-- `resp_low_rpm`
-- `resp_high_rpm`
-- `heart_low_bpm`
-- `heart_high_bpm`
-- `sustain_sec`
+**Action = Motion Gate + Model Inference**
 
-只有在數值**持續**超出範圍一段時間後，才會觸發警示圖片，避免瞬間雜訊誤報。
+---
 
-預設：
-- 呼吸異常：RPM < 8 或 RPM > 24
-- 心率異常：BPM < 50 或 BPM > 120
-- 持續時間：8 秒
+## GUI 版面
 
-### 3. GUI 新增警示圖片區
-右側動作面板下方新增：
-- 呼吸 / 心率警示文字
-- 警示圖片框
+已改成接近你草圖、並再做優化：
 
-請把圖片放在：
-- `assets/actions/normal.png`
-- `assets/actions/fall.png`
-- `assets/actions/cough.png`
-- `assets/actions/agitation.png`
-- `assets/alerts/normal.png`
-- `assets/alerts/watch.png`
-- `assets/alerts/resp_alert.png`
-- `assets/alerts/heart_alert.png`
-- `assets/alerts/resp_heart_alert.png`
+### 上半部
+- 左側：即時數值卡片
+  - BIN
+  - SCORE
+  - MOTION
+  - RPM
+  - BPM
+  - FPS / Frame
+- 右側：目前動作顯示
+  - 文字動作標籤
+  - 可放動作圖片
+  - 顯示 model score / event
 
-沒有圖片也可正常執行，GUI 會顯示文字。
+### 下半部波形區
+- Range
+- Phase
+- Respiration
+- Heart
+- Motion
 
-## 主要檔案
-- `pipeline.py`：主流程，整合動作與生理警示
-- `alert_evaluator.py`：持續異常判斷
-- `state.py`：新增警示狀態欄位
-- `gui.py`：新增警示圖片與文字
-- `dataset_tools.py`：資料標籤改成 4 類
-- `config.py`：新增 `AlertConfig`
+其中 Motion 放成底部橫向大圖，方便看異常動作能量變化。
 
-## 你需要同步修改的地方
+---
 
-### 訓練資料
-訓練資料標籤請改成 4 類：
-- `normal`
-- `fall`
-- `cough`
-- `agitation`
+## 專案結構
 
-### 模型
-你的訓練模型也必須對應這 4 類輸出。
+- `main.py`：主程式
+- `config.py`：集中設定
+- `state.py`：GUI / pipeline 共用狀態
+- `dsp.py`：FFT / unwrap / 頻域工具
+- `bin_tracker.py`：自動選 target bin
+- `motion_analyzer.py`：motion 分數與穩定判定
+- `vitals.py`：呼吸 / 心跳估測
+- `model_runner.py`：載入 sklearn / joblib 模型並推論
+- `pipeline.py`：生命體徵 + 動作判斷整合流程
+- `device_kkt.py`：KKT_Module / FRM 裝置接收
+- `gui.py`：新版 GUI
+- `dataset_tools.py`：資料集與特徵建構
+- `train_model.py`：訓練模型
+- `predict_model.py`：離線模型測試
 
-## 執行
+---
+
+## 動作圖片
+
+若你要在 GUI 右上角顯示動作圖片，把圖片放在：
+
+`assets/actions/`
+
+檔名對應 label，例如：
+- `normal.png`
+- `cough.png`
+- `fall.png`
+- `walk.png`
+
+沒有圖片時，GUI 仍可正常跑，會直接顯示文字。
+
+---
+
+## 使用方式
+
+### 1. 修改雷達設定路徑
+
+改 `config.py`：
+
+```python
+DeviceConfig.setting_dir
+```
+
+### 2. 指定模型
+
+在 `main.py` 裡設定：
+
+```python
+cfg.model.model_path = r"trained_models/mmwave_action_rf.joblib"
+```
+
+### 3. 調整動作門檻
+
+在 `config.py`：
+
+```python
+ModelConfig.motion_gate_threshold
+```
+
+### 4. 執行
+
 ```bash
 python main.py
 ```
 
-## 常用調整
-```python
-cfg.model.model_path = r"trained_models/mmwave_action_rf.joblib"
-cfg.model.motion_gate_threshold = 3.0
-cfg.alert.resp_low_rpm = 8.0
-cfg.alert.resp_high_rpm = 24.0
-cfg.alert.heart_low_bpm = 50.0
-cfg.alert.heart_high_bpm = 120.0
-cfg.alert.sustain_sec = 8.0
+---
+
+## 模型格式
+
+目前支援：
+- `joblib`
+- `pickle`
+- sklearn 類別模型
+
+模型需至少支援：
+- `predict()`
+
+若有 `predict_proba()`，GUI 會一起顯示 score。
+
+---
+
+## 安裝
+
+```bash
+pip install numpy pyqtgraph PySide2 scikit-learn joblib
 ```
+
+並放在有 `KKT_Module` 的電腦上執行。
+
+---
+
+## 你接下來通常還會想補的
+
+1. 把異常動作事件自動存成 segment
+2. 做事件列表與事件時間軸
+3. 加入模型類別分數條圖
+4. 加入錄影 / 回放模式
+
+
+
+## v3 說明
+- 未載入模型時，GUI 不再顯示 motion_detected，而是顯示「偵測到動作」。
+- Frame 若為負值，GUI 會顯示 --，避免誤判為正常 frame 編號。
+
+
+## 並行版說明
+
+此版本已改為「動作偵測與生命體徵並行」：
+- 不再因為 `motion_flag=True` 就停止 RPM / BPM 計算。
+- 有動作時仍持續更新 `phase buffer` 與生命體徵波形。
+- GUI 中若 RPM / BPM 後面帶有 `*`，代表該數值是在動作干擾期間估得，可信度較低。
+- 狀態列中的 `VITALS` 會顯示 `stable`、`motion_interference` 或 `warming_up`。

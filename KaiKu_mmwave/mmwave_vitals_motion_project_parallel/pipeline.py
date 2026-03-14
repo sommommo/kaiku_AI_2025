@@ -1,23 +1,21 @@
-from typing import Optional
 from collections import deque
+import time
 import numpy as np
 
-from config import DSPConfig, ModelConfig, AlertConfig
+from config import DSPConfig, ModelConfig
 from state import SharedState
 from dsp import RangeFFT, coherent_bin_vector, combine_rx, robust_unwrap_append
 from bin_tracker import ResearchBinTracker
 from motion_analyzer import MotionSuppressor
 from vitals import ResearchVitalsEstimator
 from model_runner import MotionModelRunner
-from alert_evaluator import VitalsAlertEvaluator
 
 
 class MmWaveVitalsMotionPipeline:
-    def __init__(self, shared: SharedState, dsp_cfg: DSPConfig, model_cfg: ModelConfig, alert_cfg: Optional[AlertConfig] = None):
+    def __init__(self, shared: SharedState, dsp_cfg: DSPConfig, model_cfg: ModelConfig):
         self.shared = shared
         self.cfg = dsp_cfg
         self.model_cfg = model_cfg
-        self.alert_cfg = alert_cfg or AlertConfig()
         self.rangefft = RangeFFT(dsp_cfg.keep_samples, dsp_cfg.fft_bins)
         self.fps = float(dsp_cfg.fps_init)
         self.bin_tracker = ResearchBinTracker(
@@ -44,7 +42,6 @@ class MmWaveVitalsMotionPipeline:
             resp_band=dsp_cfg.resp_band,
             heart_band=dsp_cfg.heart_band,
         )
-        self.alerts = VitalsAlertEvaluator(self.alert_cfg)
         self.model = MotionModelRunner(model_cfg.model_path, model_cfg.label_map, model_cfg.score_threshold) if model_cfg.enabled else MotionModelRunner(None, model_cfg.label_map)
 
         self._t0 = None
@@ -158,7 +155,6 @@ class MmWaveVitalsMotionPipeline:
         )
         model_label = action_text
 
-        alert = self.alerts.update(rpm, bpm) if self.alert_cfg.enabled else None
         debug = {
             "phase_angle": round(phase_angle, 5),
             "phase_unwrapped": round(phase_unwrapped, 5),
@@ -169,9 +165,6 @@ class MmWaveVitalsMotionPipeline:
             "vitals_quality": vitals_quality,
             **dbg_v,
         }
-        if alert is not None:
-            debug.update(alert.debug)
-
         self.shared.update(
             frame_count=fc,
             fps=self.fps,
@@ -188,10 +181,6 @@ class MmWaveVitalsMotionPipeline:
             model_score=float(model_score),
             action_text=action_text,
             event_text=event_text or "-",
-            vitals_alert_text=(alert.label if alert is not None else "normal"),
-            vitals_alert_level=(alert.level if alert is not None else 0),
-            resp_abnormal_flag=(alert.resp_abnormal if alert is not None else False),
-            heart_abnormal_flag=(alert.heart_abnormal if alert is not None else False),
             range_profile=range_profile,
             phase_wave=np.asarray(self._phase_wave, dtype=np.float32),
             resp_wave=np.asarray(resp_wave, dtype=np.float32),

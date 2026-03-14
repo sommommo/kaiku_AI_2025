@@ -3,6 +3,13 @@ import sys
 import random
 import os
 import sys
+import re
+from typing import List, Dict
+
+try:
+    from docx import Document
+except Exception:
+    Document = None
 
 from PySide2.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar,
@@ -26,6 +33,78 @@ def resource_path(relative_path: str) -> str:
         # 開發階段：new_gui.py 所在資料夾
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
+
+
+CASE_TITLE_RE = re.compile(r"^個案\s*(\d+)\s*[：:](.+)$")
+CASE_ROOM_SEQUENCE = ["301", "302", "303", "304", "305", "306", "307", "308", "309"]
+
+def load_case_records_from_docx(docx_path: str) -> Dict[str, List[dict]]:
+    """
+    從資料.docx 讀取病例內容，並依序分配到 301~309 病房。
+    每個房間預設放 1 份病例；若資料不足，該房間就留空。
+    回傳格式：
+    {
+        "301": [{"title": "個案 1：...", "content": "..."}],
+        ...
+    }
+    """
+    room_map: Dict[str, List[dict]] = {room: [] for room in CASE_ROOM_SEQUENCE}
+
+    if Document is None:
+        return room_map
+
+    if not os.path.exists(docx_path):
+        return room_map
+
+    try:
+        doc = Document(docx_path)
+    except Exception:
+        return room_map
+
+    paragraphs = []
+    for para in doc.paragraphs:
+        text = para.text.replace("\u3000", " ").strip()
+        if text:
+            paragraphs.append(text)
+
+    cases = []
+    current_case = None
+
+    for text in paragraphs:
+        if text == "⸻":
+            continue
+
+        m = CASE_TITLE_RE.match(text)
+        if m:
+            if current_case is not None:
+                current_case["content"] = "\n\n".join(current_case["lines"]).strip()
+                cases.append(current_case)
+            case_no = m.group(1)
+            case_name = m.group(2).strip()
+            current_case = {
+                "case_no": case_no,
+                "title": f"個案 {case_no}：{case_name}",
+                "lines": []
+            }
+            continue
+
+        if current_case is not None:
+            current_case["lines"].append(text)
+
+    if current_case is not None:
+        current_case["content"] = "\n\n".join(current_case["lines"]).strip()
+        cases.append(current_case)
+
+    for idx, case in enumerate(cases):
+        if idx >= len(CASE_ROOM_SEQUENCE):
+            break
+        room = CASE_ROOM_SEQUENCE[idx]
+        room_map[room].append({
+            "title": case["title"],
+            "content": case["content"],
+        })
+
+    return room_map
 
 
 
@@ -80,9 +159,12 @@ class GestureGUI(QWidget):
             (1, 0): "304", (1, 1): "305", (1, 2): "306",
             (2, 0): "307", (2, 1): "308", (2, 2): "309",
         }
-        self.max_patients_per_room = 4          # 每房病患數
+        self.max_patients_per_room = 4          # 保留欄位，實際每房筆數依 docx 載入結果
         self.current_patient_idx = 0            # 0 ~ max
         self.current_room_id = None             # 病例模式房號
+
+        # 病例資料來源：讀取同資料夾下的 資料.docx
+        self.records_by_room = load_case_records_from_docx(resource_path("pation.docx"))
 
         # 冷氣 / 燈光狀態
         self.ac_current_temp = 26               # 預設 26℃
@@ -489,16 +571,14 @@ class GestureGUI(QWidget):
 
         record_page_layout.addLayout(header_row)
 
-        body_row = QHBoxLayout()
+        body_row = QVBoxLayout()
         body_row.setSpacing(8)
 
-        # 左病例欄（放大）
-        left_case_col = QVBoxLayout()
-        left_case_col.setSpacing(4)
+        # 單一病例欄
         self.left_case_title = QLabel("病患1 病例檔案呈現")
         self.left_case_title.setAlignment(Qt.AlignCenter)
         self.left_case_title.setFont(QFont("Microsoft JhengHei", 10, QFont.Bold))
-        left_case_col.addWidget(self.left_case_title)
+        body_row.addWidget(self.left_case_title)
 
         self.record_left = QTextEdit()
         self.record_left.setReadOnly(True)
@@ -510,29 +590,11 @@ class GestureGUI(QWidget):
                 background-color: #FFFFFF;
             }
         """)
-        left_case_col.addWidget(self.record_left)
-        body_row.addLayout(left_case_col, stretch=1)
+        body_row.addWidget(self.record_left, stretch=1)
 
-        # 右病例欄（放大）
-        right_case_col = QVBoxLayout()
-        right_case_col.setSpacing(4)
-        self.right_case_title = QLabel("病患2 病例檔案呈現")
-        self.right_case_title.setAlignment(Qt.AlignCenter)
-        self.right_case_title.setFont(QFont("Microsoft JhengHei", 10, QFont.Bold))
-        right_case_col.addWidget(self.right_case_title)
-
-        self.record_right = QTextEdit()
-        self.record_right.setReadOnly(True)
-        self.record_right.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.record_right.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #B0BEC5;
-                border-radius: 6px;
-                background-color: #FFFFFF;
-            }
-        """)
-        right_case_col.addWidget(self.record_right)
-        body_row.addLayout(right_case_col, stretch=1)
+        # 保留右側屬性供其他邏輯相容，但不顯示第二張病例
+        self.right_case_title = None
+        self.record_right = None
 
         record_page_layout.addLayout(body_row)
         self.center_stack.addWidget(record_page)  # index 1
@@ -638,31 +700,44 @@ class GestureGUI(QWidget):
         self.light_level_label.setText(f"亮度：{self.light_level}%")
 
     # ====== 病例顯示更新 ======
+    def _get_room_records(self, room_id: str) -> List[dict]:
+        return self.records_by_room.get(room_id, [])
+
+    def _get_room_record_count(self, room_id: str) -> int:
+        return len(self._get_room_records(room_id))
+
     def _update_record_texts(self):
         room_id = self.current_room_id or self.room_numbers.get(
             (self.current_row, self.current_col), ""
         )
 
-        cur_idx = self.current_patient_idx
-        next_idx = (cur_idx + 1) % self.max_patients_per_room
-
+        records = self._get_room_records(room_id)
         self.record_title_label.setText(f"病房 {room_id} 病例檔案")
 
-        self.left_case_title.setText(f"病患{cur_idx + 1} 病例檔案呈現")
-        self.right_case_title.setText(f"病患{next_idx + 1} 病例檔案呈現")
-
-        self.record_left.setPlainText(
-            f"【病房 {room_id} 病患 {cur_idx + 1}】\n\n"
-            f"（此處可放該病患的摘要、生命徵象、重要提醒...）"
-        )
-        self.record_right.setPlainText(
-            f"【病房 {room_id} 病患 {next_idx + 1}】\n\n"
-            f"（此處可放下一位病患的相關資訊或預覽內容...）"
-        )
-
-        for editor in (self.record_left, self.record_right):
-            sb = editor.verticalScrollBar()
+        if not records:
+            self.left_case_title.setText("目前無病例資料")
+            self.record_left.setPlainText(
+                f"【病房 {room_id}】\n\n尚未載入病例資料。\n\n"
+                f"請確認 new_gui.py 同資料夾下存在『pation.docx』。"
+            )
+            sb = self.record_left.verticalScrollBar()
             sb.setValue(sb.minimum())
+            return
+
+        self.current_patient_idx %= len(records)
+        case = records[self.current_patient_idx]
+
+        self.left_case_title.setText(
+            f"第 {self.current_patient_idx + 1} 筆 / 共 {len(records)} 筆"
+        )
+        self.record_left.setPlainText(
+            f"【病房 {room_id}】\n"
+            f"【{case['title']}】\n\n"
+            f"{case['content']}"
+        )
+
+        sb = self.record_left.verticalScrollBar()
+        sb.setValue(sb.minimum())
 
     def show_grid_view(self):
         self.center_stack.setCurrentIndex(0)
@@ -680,11 +755,19 @@ class GestureGUI(QWidget):
         self._update_record_texts()
 
     def next_patient_in_room(self):
-        self.current_patient_idx = (self.current_patient_idx + 1) % self.max_patients_per_room
+        room_id = self.current_room_id or self.room_numbers.get((self.current_row, self.current_col), "")
+        count = self._get_room_record_count(room_id)
+        if count == 0:
+            return
+        self.current_patient_idx = (self.current_patient_idx + 1) % count
         self._update_record_texts()
 
     def prev_patient_in_room(self):
-        self.current_patient_idx = (self.current_patient_idx - 1) % self.max_patients_per_room
+        room_id = self.current_room_id or self.room_numbers.get((self.current_row, self.current_col), "")
+        count = self._get_room_record_count(room_id)
+        if count == 0:
+            return
+        self.current_patient_idx = (self.current_patient_idx - 1) % count
         self._update_record_texts()
 
     # ================== 房間格子顯示 ==================
@@ -854,14 +937,12 @@ class GestureGUI(QWidget):
                 self.prev_patient_in_room()
                 return True
             elif gesture == "Up":
-                for editor in (self.record_left, self.record_right):
-                    sb = editor.verticalScrollBar()
-                    sb.setValue(sb.value() - scroll_step)
+                sb = self.record_left.verticalScrollBar()
+                sb.setValue(sb.value() - scroll_step)
                 return True
             elif gesture == "Down":
-                for editor in (self.record_left, self.record_right):
-                    sb = editor.verticalScrollBar()
-                    sb.setValue(sb.value() + scroll_step)
+                sb = self.record_left.verticalScrollBar()
+                sb.setValue(sb.value() + scroll_step)
                 return True
             elif gesture == "Tap":
                 self.show_grid_view()
@@ -953,13 +1034,14 @@ class GestureGUI(QWidget):
     def update_probabilities(self, background_prob, down_prob, left_prob,
                              right_prob, tap_prob, up_prob, current_gesture):
 
-        # 機率條雖然存在，但下方整塊 UI 已經隱藏，不會顯示
-        self.bars["Background"].setValue(int(background_prob * 100))
-        self.bars["Down"].setValue(int(down_prob * 100))
-        self.bars["Left"].setValue(int(left_prob * 100))
-        self.bars["Right"].setValue(int(right_prob * 100))
-        self.bars["Tap"].setValue(int(tap_prob * 100))
-        self.bars["Up"].setValue(int(up_prob * 100))
+        # 機率條雖然隱藏，但若物件存在仍同步更新
+        if hasattr(self, "bars") and self.bars:
+            self.bars["Background"].setValue(int(background_prob * 100))
+            self.bars["Down"].setValue(int(down_prob * 100))
+            self.bars["Left"].setValue(int(left_prob * 100))
+            self.bars["Right"].setValue(int(right_prob * 100))
+            self.bars["Tap"].setValue(int(tap_prob * 100))
+            self.bars["Up"].setValue(int(up_prob * 100))
 
         self.current_gesture_label.setText(f"Current gesture: {current_gesture}")
         bg_color = self.gesture_colors.get(current_gesture, "#E0E0E0")

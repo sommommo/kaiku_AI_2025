@@ -23,10 +23,6 @@ class RuntimeState:
     model_score: float = 0.0
     action_text: str = "等待資料"
     event_text: str = "-"
-    vitals_alert_text: str = "normal"
-    vitals_alert_level: int = 0
-    resp_abnormal_flag: bool = False
-    heart_abnormal_flag: bool = False
     range_profile: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
     phase_wave: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
     resp_wave: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float32))
@@ -66,10 +62,6 @@ class SharedState:
                 model_score=s.model_score,
                 action_text=s.action_text,
                 event_text=s.event_text,
-                vitals_alert_text=s.vitals_alert_text,
-                vitals_alert_level=s.vitals_alert_level,
-                resp_abnormal_flag=s.resp_abnormal_flag,
-                heart_abnormal_flag=s.heart_abnormal_flag,
                 range_profile=np.array(s.range_profile, copy=True),
                 phase_wave=np.array(s.phase_wave, copy=True),
                 resp_wave=np.array(s.resp_wave, copy=True),
